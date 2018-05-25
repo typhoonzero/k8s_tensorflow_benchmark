@@ -1,0 +1,66 @@
+apiVersion: batch/v1
+kind: Job
+metadata: {name: wuyi-tf-dist-trainer}
+spec:
+  completions: 8
+  parallelism: 8
+  template:
+    metadata:
+      labels: {paddle-job: wuyi-tf-dist}
+    spec:
+      containers:
+      - command: [paddle_k8s, start_tf_benchmark_process]
+        env:
+        - {name: GLOG_v, value: '0'}
+        - {name: GLOG_logtostderr, value: '1'}
+        - {name: TOPOLOGY, value: ''}
+        - {name: TRAINER_PACKAGE, value: /workspace}
+        - {name: PADDLE_INIT_NICS, value: eth2}
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef: {fieldPath: metadata.namespace}
+        - name: POD_IP
+          valueFrom:
+            fieldRef: {fieldPath: status.podIP}
+        - name: PADDLE_CURRENT_IP
+          valueFrom:
+            fieldRef: {fieldPath: status.podIP}
+        - {name: PADDLE_JOB_NAME, value: wuyi-tf-dist}
+        - {name: TRAINERS, value: '8'}
+        - {name: PSERVERS, value: '8'}
+        - {name: ENTRY, value: bash -x /root/run_dist_train.sh}
+        - {name: PADDLE_INIT_PORT, value: '30456'}
+        - {name: PADDLE_PSERVER_PORT, value: '30456'}
+        - {name: TF_WORKER_PORT, value: '30457'}
+        - {name: LD_LIBRARY_PATH, value: '/usr/local/lib:/usr/local/nvidia/lib64:/usr/local/rdma/lib64:/usr/lib64/mlnx_ofed/valgrind'}
+        - {name: TRAINING_ROLE, value: TRAINER}
+        image: bootstrapper:5000/tensorflow_benchmark:gpu
+        imagePullPolicy: Always
+        name: trainer
+        ports:
+        - {containerPort: 30457, name: tfport-30457}
+        resources:
+          limits: {alpha.kubernetes.io/nvidia-gpu: '8', cpu: '10', memory: 60Gi}
+          requests: {alpha.kubernetes.io/nvidia-gpu: '8', cpu: '10', memory: 60Gi}
+        securityContext: {privileged: true}
+        volumeMounts:
+        - {mountPath: /usr/local/nvidia/lib64, name: nvidia-driver}
+        - {mountPath: /etc/libibverbs.d, name: ibetc}
+        - {mountPath: /usr/local/rdma, name: iblibs}
+        - {mountPath: /usr/lib64/mlnx_ofed/valgrind, name: valgrind}
+        - {mountPath: /dev/shm, name: dshm}
+      hostNetwork: true
+      imagePullSecrets:
+      - {name: job-registry-secret}
+      restartPolicy: Never
+      volumes:
+      - hostPath: {path: /usr/local/nvidia/lib64}
+        name: nvidia-driver
+      - hostPath: {path: /etc/libibverbs.d}
+        name: ibetc
+      - hostPath: {path: /usr/local/rdma}
+        name: iblibs
+      - hostPath: {path: /usr/lib64/mlnx_ofed/valgrind}
+        name: valgrind
+      - emptyDir: {medium: Memory}
+        name: dshm
